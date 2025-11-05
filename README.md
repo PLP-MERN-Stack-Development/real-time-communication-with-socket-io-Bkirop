@@ -376,8 +376,6 @@ If you have any questions or need help, please open an issue on GitHub or contac
 
 ---
 
-<<<<<<< HEAD
 **Happy Chatting! 🎉**
 =======
 **Happy Chatting! 🎉**
->>>>>>> d203863e990fcf00184910458de3f94a45cf892b
