@@ -1,132 +1,162 @@
-// server.js - Main server file for Socket.io chat application
-
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const dotenv = require('dotenv');
-const path = require('path');
+const mongoose = require('mongoose');
 
-// Load environment variables
-dotenv.config();
-
-// Initialize Express app
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
-});
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  credentials: true
+}));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
-// Store connected users and messages
-const users = {};
+// Socket.io setup
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    methods: ['GET', 'POST']
+  }
+});
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/chat-app')
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.error('❌ MongoDB error:', err));
+
+// In-memory storage for testing
+const connectedUsers = new Map();
 const messages = [];
-const typingUsers = {};
 
-// Socket.io connection handler
+// Socket.io handlers
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`);
+  console.log('🔌 User connected:', socket.id);
 
-  // Handle user joining
-  socket.on('user_join', (username) => {
-    users[socket.id] = { username, id: socket.id };
-    io.emit('user_list', Object.values(users));
-    io.emit('user_joined', { username, id: socket.id });
-    console.log(`${username} joined the chat`);
+  socket.on('authenticate', (data) => {
+    const { userId } = data;
+    connectedUsers.set(userId, socket.id);
+    socket.userId = userId;
+    socket.emit('authenticated', { success: true });
+    console.log('✅ User authenticated:', userId);
   });
 
-  // Handle chat messages
-  socket.on('send_message', (messageData) => {
+  socket.on('room:join', ({ roomId, userId }) => {
+    socket.join(roomId);
+    socket.emit('room:messages', { roomId, messages });
+    socket.to(roomId).emit('user:joined', { userId, roomId });
+    console.log(`✅ User ${userId} joined room ${roomId}`);
+  });
+
+  socket.on('message:send', (data) => {
     const message = {
-      ...messageData,
-      id: Date.now(),
-      sender: users[socket.id]?.username || 'Anonymous',
-      senderId: socket.id,
-      timestamp: new Date().toISOString(),
+      _id: Date.now().toString(),
+      content: data.content,
+      sender: {
+        _id: data.userId,
+        username: data.username || 'User',
+        avatar: `https://ui-avatars.com/api/?name=${data.username || 'User'}`
+      },
+      room: data.roomId,
+      createdAt: new Date(),
+      reactions: []
     };
     
     messages.push(message);
-    
-    // Limit stored messages to prevent memory issues
-    if (messages.length > 100) {
-      messages.shift();
-    }
-    
-    io.emit('receive_message', message);
+    io.to(data.roomId).emit('message:new', message);
+    socket.emit('message:delivered', { tempId: data.tempId, messageId: message._id });
+    console.log('📨 Message sent:', message.content);
   });
 
-  // Handle typing indicator
-  socket.on('typing', (isTyping) => {
-    if (users[socket.id]) {
-      const username = users[socket.id].username;
-      
-      if (isTyping) {
-        typingUsers[socket.id] = username;
-      } else {
-        delete typingUsers[socket.id];
-      }
-      
-      io.emit('typing_users', Object.values(typingUsers));
-    }
+  socket.on('typing:start', (data) => {
+    socket.to(data.roomId).emit('typing:user', {
+      userId: data.userId,
+      username: data.username,
+      isTyping: true
+    });
   });
 
-  // Handle private messages
-  socket.on('private_message', ({ to, message }) => {
-    const messageData = {
-      id: Date.now(),
-      sender: users[socket.id]?.username || 'Anonymous',
-      senderId: socket.id,
-      message,
-      timestamp: new Date().toISOString(),
-      isPrivate: true,
-    };
-    
-    socket.to(to).emit('private_message', messageData);
-    socket.emit('private_message', messageData);
+  socket.on('typing:stop', (data) => {
+    socket.to(data.roomId).emit('typing:user', {
+      userId: data.userId,
+      isTyping: false
+    });
   });
 
-  // Handle disconnection
   socket.on('disconnect', () => {
-    if (users[socket.id]) {
-      const { username } = users[socket.id];
-      io.emit('user_left', { username, id: socket.id });
-      console.log(`${username} left the chat`);
+    if (socket.userId) {
+      connectedUsers.delete(socket.userId);
     }
-    
-    delete users[socket.id];
-    delete typingUsers[socket.id];
-    
-    io.emit('user_list', Object.values(users));
-    io.emit('typing_users', Object.values(typingUsers));
+    console.log('🔌 User disconnected:', socket.id);
   });
 });
 
-// API routes
-app.get('/api/messages', (req, res) => {
-  res.json(messages);
+// REST API Routes
+app.post('/api/auth/register', (req, res) => {
+  const { username, email, password } = req.body;
+  
+  if (!username || !email || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide all fields'
+    });
+  }
+  
+  res.json({
+    success: true,
+    data: {
+      user: {
+        id: Date.now().toString(),
+        username,
+        email,
+        avatar: `https://ui-avatars.com/api/?name=${username}&background=random`
+      },
+      token: 'test-token-' + Date.now()
+    }
+  });
 });
 
-app.get('/api/users', (req, res) => {
-  res.json(Object.values(users));
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide email and password'
+    });
+  }
+  
+  const username = email.split('@')[0];
+  
+  res.json({
+    success: true,
+    data: {
+      user: {
+        id: Date.now().toString(),
+        username,
+        email,
+        avatar: `https://ui-avatars.com/api/?name=${username}&background=random`
+      },
+      token: 'test-token-' + Date.now()
+    }
+  });
 });
 
-// Root route
-app.get('/', (req, res) => {
-  res.send('Socket.io Chat Server is running');
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    timestamp: new Date(),
+    users: connectedUsers.size,
+    messages: messages.length
+  });
 });
 
-// Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📡 Socket.io ready`);
+  console.log(`🌍 Visit http://localhost:${PORT}/api/health`);
 });
-
-module.exports = { app, server, io }; 

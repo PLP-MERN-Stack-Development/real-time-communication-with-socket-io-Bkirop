@@ -1,0 +1,114 @@
+import React, { useEffect, useState } from 'react';
+import { useSocket } from '../../contexts/SocketContext';
+import axios from 'axios';
+
+function UserList({ roomId }) {
+  const { socket, onlineUsers } = useSocket();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      if (!roomId) return;
+      
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/rooms/${roomId}/users`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        setUsers(response.data.users);
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+        setError('Failed to load users');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, [roomId]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleStatusUpdate = ({ userId, status }) => {
+      setUsers(prevUsers =>
+        prevUsers.map(user => 
+          user._id === userId ? { ...user, status } : user
+        )
+      );
+    };
+
+    socket.on('user:status', handleStatusUpdate);
+
+    return () => {
+      socket.off('user:status', handleStatusUpdate);
+    };
+  }, [socket]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-500" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center text-red-500 p-4">
+        <p>{error}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="mt-2 text-sm text-blue-500 hover:underline"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-4">
+      <h3 className="text-xl font-semibold text-white mb-4">Online Users</h3>
+      <div className="space-y-3">
+        {users.map(user => (
+          <div 
+            key={user._id}
+            className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            <div className="relative">
+              <img
+                src={user.avatar || `https://ui-avatars.com/api/?name=${user.username}`}
+                alt={user.username}
+                className="w-10 h-10 rounded-full"
+              />
+              <div 
+                className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-800 ${
+                  onlineUsers.has(user._id) ? 'bg-green-500' : 'bg-gray-500'
+                }`}
+              />
+            </div>
+            <div className="flex-1">
+              <div className="text-white font-medium">{user.username}</div>
+              <div className="text-gray-400 text-sm">
+                {onlineUsers.has(user._id) ? 'Online' : 'Offline'}
+              </div>
+            </div>
+          </div>
+        ))}
+        {users.length === 0 && (
+          <div className="text-center text-gray-400 py-4">
+            No users in this room
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default UserList;
