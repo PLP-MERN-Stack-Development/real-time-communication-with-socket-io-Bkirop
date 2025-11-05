@@ -69,6 +69,7 @@ cd real-time-communication-with-socket-io
 Create a `.env` file in the `server` directory:
 
 ```env
+<<<<<<< HEAD
 
 NODE_ENV=development
 PORT=5000
@@ -103,6 +104,41 @@ npm install
 
 Make sure MongoDB is running on your system:
 
+=======
+NODE_ENV=development
+PORT=5000
+MONGODB_URI=mongodb://localhost:27017/chatapp
+JWT_SECRET=your-super-secret-jwt-key-here
+CORS_ORIGIN=http://localhost:5173
+```
+
+#### Frontend Environment Variables
+Create a `.env` file in the `client` directory:
+
+```env
+VITE_API_URL=http://localhost:5000/api
+VITE_SOCKET_URL=http://localhost:5000
+```
+
+### 3. Install Dependencies
+
+#### Install Server Dependencies
+```bash
+cd server
+npm install
+```
+
+#### Install Client Dependencies
+```bash
+cd ../client
+npm install
+```
+
+### 4. Start MongoDB
+
+Make sure MongoDB is running on your system:
+
+>>>>>>> d203863e990fcf00184910458de3f94a45cf892b
 ```bash
 # For local MongoDB installation
 mongod
@@ -340,4 +376,8 @@ If you have any questions or need help, please open an issue on GitHub or contac
 
 ---
 
+<<<<<<< HEAD
 **Happy Chatting! 🎉**
+=======
+**Happy Chatting! 🎉**
+>>>>>>> d203863e990fcf00184910458de3f94a45cf892b
