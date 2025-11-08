@@ -1,36 +1,24 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+function extractUserId(req) {
+  const userId = req.headers['x-user-id'] || req.headers['X-User-Id'];
+  return userId;
+}
 
-exports.protect = async (req, res, next) => {
-  try {
-    let token;
-
-    if (req.headers.authorization?.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Not authorized to access this route'
-      });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id);
-
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    next();
-  } catch (error) {
-    res.status(401).json({
-      success: false,
-      message: 'Not authorized to access this route'
-    });
+async function requireAuth(req, res, next) {
+  const userId = extractUserId(req);
+  
+  if (!userId) {
+    return res.status(401).json({ message: "Missing user ID header (X-User-Id)" });
   }
+
+  req.auth = {
+    userId: userId,
+    sessionId: null,
+    claims: {}
+  };
+
+  return next();
+}
+
+module.exports = {
+  requireAuth
 };
